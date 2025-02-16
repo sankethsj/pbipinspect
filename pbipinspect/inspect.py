@@ -84,7 +84,7 @@ class PbipInspect:
         tables = get_tmdl_table_files(folder)
         parsed_tables = []
         for table in tables:
-            content = table.read_text()
+            content = table.read_text(encoding='utf-8')
             tmdl_parsed = get_tmdl_table(content)
             parsed_tables.append(tmdl_parsed)
         return parsed_tables
@@ -104,7 +104,7 @@ class PbipInspect:
         if not check:
             return None
         relationship = get_tmdl_relationship_file(folder)
-        content = relationship.read_text()
+        content = relationship.read_text(encoding='utf-8')
         parsed_relationship = get_tmdl_relationship(content)
         return parsed_relationship
 
