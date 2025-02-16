@@ -88,6 +88,10 @@ class Pbip:
         return self.model['model']['tables']
     
     @property
+    def expressions(self) -> list[dict]:
+        return self.model['model']['expressions']
+    
+    @property
     def relationships(self) -> list[dict]:
         return self.model['model']['relationships']
 
