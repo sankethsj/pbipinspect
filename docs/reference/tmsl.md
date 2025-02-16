@@ -1,2 +1,0 @@
-# tmsl
-::: pbipinspect.tmsl
