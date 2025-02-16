@@ -446,3 +446,31 @@ def expect_all_relationships_active(
         return checks
     return function
 
+def expect_no_calculated_tables(
+    state: ExpectState = 'Warning'
+) -> Callable:
+    """
+    Returns a function that checks if calculated tables are not present in a Pbip object.
+
+    Parameters
+    ----------
+    state : ExpectState, optional
+        The state of the expectation, defaults to 'Warning'.
+
+    Returns
+    -------
+    Callable
+        A function that checks if calculated tables are not present in a Pbip object.
+    """
+    def function(pbip: Pbip) -> list[ExpectMessage]:
+        tables = pbip.tables
+        checks = []
+        for table in tables:
+            if table['partitions'][0]['type'] == 'calculated':
+                checks.append({
+                    'expect': 'expect_no_calculated_tables',
+                    'state': state,
+                    'message': f"Table '{table['name']}' is calculated",
+                })
+        return checks
+    return function
