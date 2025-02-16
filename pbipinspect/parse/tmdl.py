@@ -1,13 +1,28 @@
 
 from pathlib import Path
 from pbipinspect.utils import get_regex_group
+from pbipinspect.parse.utils import (
+    get_measure_references,
+    put_column_description,
+    get_measure_description,
+    get_relationship_filter_cardinality,
+    get_table_description,
+    get_table_property_content,
+    remove_doc_comments,
+)
 import re
 from typing import Optional
 
-def build_relationship_path(semantic_model_path: str | Path) -> Path:
+def build_component_path(semantic_model_path: str | Path, component: str) -> Path:
     new_path = Path(semantic_model_path)
-    table_folder = Path.joinpath(new_path, 'definition', 'relationships.tmdl')
+    table_folder = Path.joinpath(new_path, 'definition', component)
     return table_folder
+
+def build_relationship_path(semantic_model_path: str | Path) -> Path:
+    return build_component_path(semantic_model_path, 'relationships.tmdl')
+
+def build_expression_path(semantic_model_path: str | Path) -> Path:
+    return build_component_path(semantic_model_path, 'expressions.tmdl')
 
 def has_relationship_file(semantic_model_path: str | Path) -> bool:
     new_path = Path(semantic_model_path)
@@ -16,10 +31,22 @@ def has_relationship_file(semantic_model_path: str | Path) -> bool:
         return True
     return False
 
+def has_expression_file(semantic_model_path: str | Path) -> bool:
+    new_path = Path(semantic_model_path)
+    expression_file = build_expression_path(new_path)
+    if expression_file.exists():
+        return True
+    return False
+
 def get_tmdl_relationship_file(semantic_model_path: str | Path) -> Path:
     new_path = Path(semantic_model_path)
     relationship_file = build_relationship_path(new_path)
     return relationship_file
+
+def get_tmdl_expression_file(semantic_model_path: str | Path) -> Path:
+    new_path = Path(semantic_model_path)
+    expression_file = build_expression_path(new_path)
+    return expression_file
 
 def get_lineage_tag(x: str) -> Optional[str]:
     pattern = r'lineageTag:\s?([0-9a-zA-Z-]+)'
@@ -49,17 +76,20 @@ def get_relationship_from_column(x: str) -> tuple[Optional[str], Optional[str]]:
 def get_relationship_to_column(x: str) -> tuple[Optional[str], Optional[str]]:
     return get_relationship_from_to(x, r'toColumn:\s?(.*)')
 
-def get_relationship_cardinality(x: str) -> str:
+def get_relationship_to_cardinality(x: str) -> str:
     pattern = r'toCardinality:\s?(\w+)'
     cardinality = get_regex_group(x=x, pattern=pattern, if_none='oneToMany')
     return cardinality
 
-def get_relationship_cross_filtering_behavior(x: str) -> Optional[str]:
-    if 'crossFilteringBehavior' in x:
-        pattern = r'crossFilteringBehavior:\s?(\w+)'
-        behavior = get_regex_group(x=x, pattern=pattern)
-        return behavior
-    return 'singleDirection'
+def get_relationship_from_cardinality(x: str) -> str:
+    pattern = r'fromCardinality:\s?(\w+)'
+    cardinality = get_regex_group(x=x, pattern=pattern, if_none='oneToMany')
+    return cardinality
+
+def get_relationship_cross_filtering_behavior(x: str) -> str:
+    pattern = r'crossFilteringBehavior:\s?(\w+)'
+    behavior = get_regex_group(x=x, pattern=pattern, if_none='singleDirection')
+    return behavior
 
 def get_relationship_is_active(x: str) -> Optional[str]:
     pattern = r'isActive\:\s?(\w+)'
@@ -93,9 +123,15 @@ def get_tmdl_relationship(tmdl: str) -> list[dict]:
             'crossFilteringBehavior': str
                 The cross filtering behavior of the relationship.
                 Can be 'oneDirection' or 'bothDirections'.
-            'toCardinality': str
-                The cardinality of the relationship.
-                Can be 'oneToOne', 'oneToMany' or 'manyToMany'.
+            'filteringSymbol': str
+                The filtering symbol of the relationship.
+                Can be '<' or '<>'.
+            'fromCardinalitySymbol': str
+                The cardinality symbol of the relationship.
+                Can be '1' or '*'.
+            'toCardinalitySymbol': str
+                The cardinality symbol of the relationship.
+                Can be '1' or '*'.
             'isActive': bool
                 Whether the relationship is active or not.
     """
@@ -103,11 +139,21 @@ def get_tmdl_relationship(tmdl: str) -> list[dict]:
     splited = tmdl.split('relationship')[1:]
     relationships = []
     for x in splited:
+        filtering_behavior = get_relationship_cross_filtering_behavior(x)
+        from_cardinality = get_relationship_from_cardinality(x)
+        to_cardinality = get_relationship_to_cardinality(x)
+
+        filtering_cardinality = get_relationship_filter_cardinality(
+            filtering_behavior,
+            to_cardinality,
+            from_cardinality
+        )
+        filtering_symbol, from_cardinality_symbol, to_cardinality_symbol = filtering_cardinality
+
         name = get_relationship_name(x)
         from_table, from_column = get_relationship_from_column(x)
         to_table, to_column = get_relationship_to_column(x)
         cross_filtering_behavior = get_relationship_cross_filtering_behavior(x)
-        to_cardinality = get_relationship_cardinality(x)
         is_active = get_relationship_is_active(x)
         relationships.append({
             'name': name,
@@ -116,10 +162,67 @@ def get_tmdl_relationship(tmdl: str) -> list[dict]:
             'toTable': to_table,
             'toColumn': to_column,
             'crossFilteringBehavior': cross_filtering_behavior,
-            'toCardinality': to_cardinality,
+            'filteringSymbol': filtering_symbol,
+            'fromCardinalitySymbol': from_cardinality_symbol,
+            'toCardinalitySymbol': to_cardinality_symbol,
             'isActive': is_active
         })
     return relationships
+
+def get_expression_name(x: str) -> str:
+    pattern = r"expression\s(.*)"
+    name = str(get_regex_group(x=x, pattern=pattern)).split(' =')[0]
+    return name
+
+def get_expression_parameter_description(x: str, parameter: str) -> str:
+    pattern = f'\/\/\/(.*)\nexpression\s({parameter})'
+    search = re.search(pattern, x)
+    if search is None:
+        return ''
+    return search.group(1).strip()
+
+def get_expression_function_description(expression: str, pattern: str) -> str:
+    return get_table_description(expression, pattern)
+
+def is_expression_function(x: str):
+    pattern = r'(annotation PBI_ResultType = Function)'
+    return bool(get_regex_group(x=x, pattern=pattern))
+
+def get_tmdl_expressions(tmdl: str) -> list[dict]:
+    splited = [x for x in tmdl.split('\n') if x != '']
+    no_tabs_idx = [idx 
+        for (idx, value) in enumerate(splited)
+        if value.count('\t') == 0
+    ] + [len(splited)]
+    sequences = list(zip(no_tabs_idx[0:-1], no_tabs_idx[1:]))
+    expressions = []
+    for begin, end in sequences:
+        cur_list = splited[begin:end]
+        cur = '\n'.join(splited[begin:end])
+        expression_name = get_expression_name(cur)
+        expression_lineage = get_lineage_tag(cur)
+        if expression_name == 'None':
+            continue
+        is_function = is_expression_function(cur)
+        if is_function:
+            idx_next_level = [idx
+                for (idx, value) in enumerate(cur_list[1:])
+                if value.count('\t') == 1
+            ][0] + 1
+            raw_value = '\n'.join(cur_list[1:idx_next_level]).replace('\t\t', '')
+            value = remove_doc_comments(raw_value).replace('```', '')
+            description = get_expression_function_description(raw_value, r'@doc(.*?)(?=let)').replace('*/', '').strip()
+        else:
+            value = splited[begin].split('=')[1].split('meta')[0].strip()
+            description = get_expression_parameter_description(x=tmdl, parameter=expression_name)
+        expressions.append({
+            'name': expression_name,
+            'lineageTag': expression_lineage,
+            'type': 'function' if is_function else 'expression',
+            'expression': value,
+            'description': description
+        })
+    return expressions
 
 def build_table_path(semantic_model_path: str | Path) -> Path:
     new_path = Path(semantic_model_path)
@@ -140,7 +243,7 @@ def get_tmdl_table_files(semantic_model_path: str | Path) -> list[Path]:
     return tables
 
 def get_table_name(tmdl: str) -> Optional[str]:
-    pattern = r'(?<=table\s)([A-Za-z0-9_-]+)'
+    pattern = r"table\s+['\"]?([^'\"]+?)['\"]?\s*\n"
     name = get_regex_group(x=tmdl, pattern=pattern)
     return name
 
@@ -168,9 +271,7 @@ def get_annotations(x: str) -> Optional[list[dict]]:
     return column_annotation
 
 def get_table_columns_content(tmdl: str) -> list[str]:
-    content = tmdl.split('column')[1:]
-    valid_content = [x for x in content if not x.startswith(':')]#[0]
-    return valid_content
+    return get_table_property_content(tmdl, 'column')
 
 def get_table_column_name_expression(x: str) -> tuple[Optional[str], Optional[str]]:
     pattern = r'(\w+)\s?\=?\s?(.*)$'
@@ -225,8 +326,7 @@ def get_table_columns(tmdl: str) -> list[dict]:
     """
     content = get_table_columns_content(tmdl)
     columns = []
-    for x in content:
-        cur_value = re.split(r'measure|partition|hierarchy', x)[0]
+    for cur_value in content:
         name, expression = get_table_column_name_expression(cur_value)
         data_type = get_table_column_data_type(cur_value)
         is_hidden = 'isHidden' in cur_value
@@ -248,6 +348,9 @@ def get_table_columns(tmdl: str) -> list[dict]:
             'calculated': str(source_column).startswith('[') or expression
         })
     return columns
+
+def get_table_partition_content(tmdl: str) -> list[str]:
+    return get_table_property_content(tmdl, 'partition')
 
 def get_table_partition_name_type(x: str) -> tuple[Optional[str], Optional[str]]:
     pattern = r'(.*)\s?\=\s?(\w+)'
@@ -288,22 +391,30 @@ def get_table_partitions(tmdl: str) -> list[dict]:
         - name: str
         - type: str
         - mode: str
+        - raw_expression: str
         - expression: str
+        - description: str
     """
-    splited = [x for x in tmdl.split('partition')[1:]]
+    content = get_table_partition_content(tmdl)
     partitions = []
-    for x in splited:
-        cur_value = re.split(r'measure|column|hierarchy|annotation', x)[0]
+    for cur_value in content:
         name, type = get_table_partition_name_type(cur_value)
         mode = get_table_partition_mode(cur_value)
         source = get_table_partition_source(cur_value)
+        description = get_table_description(cur_value)
+        source_without_docs = remove_doc_comments(source) if source else None
         partitions.append({
             'name': name,
             'type': type,
             'mode': mode,
-            'expression': source
+            'raw_expression': source,
+            'expression': source_without_docs,
+            'description': description,
         })
     return partitions
+
+def get_table_measure_content(tmdl: str) -> list[str]:
+    return get_table_property_content(tmdl, 'measure')
 
 def get_table_measure_name(x: str) -> str:
     name = x.split('=')[0].strip()
@@ -314,15 +425,16 @@ def get_table_measure_format_string(x: str) -> Optional[str]:
     format_string = get_regex_group(x=x, pattern=pattern)
     return format_string
 
-def get_table_measure_display_folder(x: str) -> Optional[str]:
+def get_table_measure_display_folder(x: str) -> str:
     pattern = r'displayFolder:\s?(.*)\n'
-    display_folder = get_regex_group(x=x, pattern=pattern)
+    display_folder = get_regex_group(x=x, pattern=pattern, if_none='')
     return display_folder
 
 def get_table_measure_expression(x: str) -> str:
     pattern = r'formatString|displayFolder|lineageTag|annotation'
-    raw_expression = re.split(pattern, x)[0].split('=')[1:]
-    expression = ''.join(raw_expression).replace('\t', '').replace('```', '').strip()
+    without_description = remove_doc_comments(x)
+    raw_expression = re.split(pattern, without_description)[0].split('=')[1:]
+    expression = '='.join(raw_expression).replace('\t', '').replace('```', '').strip()
     return expression
 
 def get_table_measures(tmdl: str) -> list[dict]:
@@ -344,24 +456,29 @@ def get_table_measures(tmdl: str) -> list[dict]:
         - displayFolder: str | None
         - lineageTag: str | None
         - expression: str
+        - description: str
+        - references: list[str]
     """
-    splited = [x for x in tmdl.split('measure')[1:]]
+    content = get_table_measure_content(tmdl)
     measures = []
-    for x in splited:
-        cur_value = re.split(r'partition|column|hierarchy', x)[0]
+    for cur_value in content:
         name = get_table_measure_name(cur_value)
         format_string = get_table_measure_format_string(cur_value)
         display_folder = get_table_measure_display_folder(cur_value)
         lineage_tag = get_lineage_tag(cur_value)
         annotations = get_annotations(cur_value)
         expression = get_table_measure_expression(cur_value)
+        description = get_measure_description(cur_value)
+        references = get_measure_references(expression)
         measures.append({
             'name': name,
             'formatString': format_string,
             'annotations': annotations,
             'displayFolder': display_folder,
             'lineageTag': lineage_tag,
-            'expression': expression
+            'expression': expression,
+            'description': description,
+            'references': references
         })
     return measures
 
@@ -393,12 +510,15 @@ def get_tmdl_table(tmdl: str) -> dict:
     table_columns = get_table_columns(tmdl)
     table_measures = get_table_measures(tmdl)
     table_partitions = get_table_partitions(tmdl)
+
+    expression = table_partitions[0]['raw_expression']
+    columns_with_descriptions = put_column_description(table_columns, expression)
     return {
         'name': table_name,
         'lineageTag': lineage_tag,
         'isHidden': is_hidden,
         'isPrivate': is_private,
-        'columns': table_columns,
+        'columns': columns_with_descriptions,
         'measures': table_measures,
         'partitions': table_partitions
     }
