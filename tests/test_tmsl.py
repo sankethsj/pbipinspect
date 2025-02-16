@@ -1,7 +1,7 @@
 
 import deepdiff
 from pathlib import Path
-from pbipinspect.tmsl import (
+from pbipinspect.parse.tmsl import (
     build_tmsl_path, 
     clean_tmsl_columns,
     clean_tmsl_measures,
@@ -74,7 +74,8 @@ def test_clean_tmsl_columns_not_empty():
             "lineageTag": "fake_lineage1",
             "sourceColumn": "column1",
             "summarizeBy": "none",
-            "calculated": False
+            "calculated": False,
+            "description": ""
         },
         {
             "name": "column2",
@@ -91,7 +92,8 @@ def test_clean_tmsl_columns_not_empty():
             "lineageTag": "fake_lineage2",
             "summarizeBy": "none",
             "sourceColumn": "[column1]",
-            "calculated": True
+            "calculated": True,
+            "description": ""
         }
     ]
     result = clean_tmsl_columns(columns)
@@ -117,7 +119,9 @@ def test_clean_tmsl_partitions():
             "name": "habitos",
             "type": "m",
             "mode": "import",
-            "expression": "let a = 1 + 1 in a"
+            "raw_expression": "let \na = 1 + 1 \nin a",
+            "expression": "let \na = 1 + 1 \nin a",
+            "description": ""
         }
     ]
     result = clean_tmsl_partitions(partitions)
@@ -160,7 +164,9 @@ def test_clean_tmsl_measures_not_empty():
             "displayFolder": "folder1",
             "expression": "1 + 1",
             "formatString": "\"R$\"\\ #,0.00;-\"R$\"\\ #,0.00;\"R$\"\\ #,0.00",
-            "lineageTag": "fake_lineage1"
+            "lineageTag": "fake_lineage1",
+            "references": [],
+            "description": ""
           },
           {
             "name": "receita",
@@ -168,7 +174,9 @@ def test_clean_tmsl_measures_not_empty():
             "displayFolder": "folder2",
             "expression": "var = 1 + 1\nreturn var",
             "lineageTag": "fake_lineage2",
-            "formatString": None
+            "formatString": None,
+            "references": [],
+            "description": ""
           }
     ]
     result = clean_tmsl_measures(measures)
@@ -223,7 +231,8 @@ def test_clean_tmsl_tables():
                     "lineageTag": "fake_lineage1",
                     "sourceColumn": "column1",
                     "summarizeBy": "none",
-                    "calculated": False
+                    "calculated": False,
+                    "description": ""
                 }
             ],
             "measures": [
@@ -233,19 +242,23 @@ def test_clean_tmsl_tables():
                     "expression": "1 + 1",
                     "lineageTag": "fake_lineage1",
                     "formatString": None,
-                    "annotations": None
+                    "annotations": None,
+                    "references": [],
+                    "description": ""
                 }
             ],
             "partitions": [
                 {
                     "name": "partition1",
-                    "mode": "import",    
+                    "mode": "import",
+                    "raw_expression": "let a = 1 + 1 in a",
                     "expression": "let a = 1 + 1 in a",
-                    "type": "m"
+                    "type": "m",
+                    "description": ""
                 }
             ],
             "isHidden": False,
-            "isPrivate": False
+            "isPrivate": False,
         }
     ]
     result = clean_tmsl_tables(table)
@@ -270,7 +283,9 @@ def test_clean_tmsl_relationships():
             "toColumn": "column2",
             "toTable": "table2",
             "crossFilteringBehavior": 'singleDirection',
-            "toCardinality": "oneToMany",
+            "filteringSymbol": '<',
+            "fromCardinalitySymbol": '*',
+            "toCardinalitySymbol": '1',
             "isActive": True
         }
     ]
