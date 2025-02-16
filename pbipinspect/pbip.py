@@ -165,3 +165,31 @@ class Pbip:
             if t['name'] == table and measure in measure_names:
                 return t['measures'][measure_names.index(measure)]
         return None
+
+    def get_fields(self, x: str) -> list[dict]:
+        """
+        Retrieve fields from tables based on the specified key.
+
+        Parameters
+        ----------
+        x : str
+            The key to access specific fields in the table, such as 'columns' or 'measures'.
+
+        Returns
+        -------
+        list[dict]
+            A list of dictionaries, each containing the fields from the tables along with the table name.
+        """
+        fields = []
+        for table in self.tables:
+            for column in table[x]:
+                fields.append(column | {'table': table['name']})
+        return fields
+
+    @property
+    def columns(self) -> list[dict]:
+        return self.get_fields('columns')
+
+    @property
+    def measures(self) -> list[dict]:
+        return self.get_fields('measures')
