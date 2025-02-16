@@ -102,8 +102,10 @@ class PbipInspect:
         folder = self.semantic_folder
         check = has_table_folder(folder)
         if not check:
-            return None
+            return []
         relationship = get_tmdl_relationship_file(folder)
+        if Path(relationship).is_file() == False: 
+            return []
         content = relationship.read_text(encoding='utf-8')
         parsed_relationship = get_tmdl_relationship(content)
         return parsed_relationship
