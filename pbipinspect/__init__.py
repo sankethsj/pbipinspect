@@ -1,0 +1,1 @@
+from pbipinspect.inspect import create_inspect
